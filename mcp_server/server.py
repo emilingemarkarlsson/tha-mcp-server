@@ -29,7 +29,18 @@ from .schema_hints import ALL_DBS, DB_DESCRIPTIONS, SQL_HINTS, TIER_PRESETS
 MD_TOKEN: str = os.environ.get("MOTHERDUCK_TOKEN", "")
 
 # CUSTOMER_KEYS = JSON blob: {"tha-abc123": {"name": "X", "dbs": ["nhl"], "tier": "nhl"}}
-CUSTOMER_KEYS: dict[str, dict] = json.loads(os.environ.get("CUSTOMER_KEYS", "{}"))
+# Coolify may inject env var values with backslash-escaped quotes — handle both forms.
+def _parse_customer_keys() -> dict[str, dict]:
+    raw = os.environ.get("CUSTOMER_KEYS", "{}")
+    for candidate in (raw, raw.replace('\\"', '"')):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    print(f"WARNING: CUSTOMER_KEYS could not be parsed: {raw[:100]!r}")
+    return {}
+
+CUSTOMER_KEYS: dict[str, dict] = _parse_customer_keys()
 
 # Local/stdio mode bypasses all auth — set via MCP_LOCAL_MODE=1 or stdio_server.py
 LOCAL_MODE: bool = os.environ.get("MCP_LOCAL_MODE", "0") == "1"
