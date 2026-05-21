@@ -15,6 +15,7 @@ import json
 import os
 import re
 import threading
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any
 
@@ -271,9 +272,22 @@ def run_sql(database: str, sql: str) -> str:
 
 # ── FastAPI wrapper with auth middleware ──────────────────────────────────────
 
+# FastMCP 3.x: http_app() returns a Starlette app that registers route at /mcp.
+# Its lifespan MUST be passed to the parent FastAPI app, and mounting at / means
+# external path /mcp maps correctly to the internal /mcp route.
+_mcp_asgi = mcp.http_app()
+
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    async with _mcp_asgi.lifespan(application):
+        yield
+
+
 app = FastAPI(
     title="THA MCP Server",
     version="1.0.0",
+    lifespan=_lifespan,
     docs_url=None,
     redoc_url=None,
 )
@@ -309,11 +323,5 @@ async def auth_middleware(request: Request, call_next: Any) -> Response:
     return response
 
 
-# Mount MCP ASGI app at /mcp
-# fastmcp 2.x exposes the ASGI app via http_app() or get_asgi_app()
-try:
-    _mcp_asgi = mcp.http_app()
-except AttributeError:
-    _mcp_asgi = mcp.get_asgi_app()  # older fastmcp API
-
-app.mount("/mcp", _mcp_asgi)
+# Mount MCP at root — internal route is /mcp so external path is also /mcp
+app.mount("/", _mcp_asgi)
